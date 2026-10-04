@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SnapStock Gantt Chart</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a compact header, then one wide schedule sheet. Task names stay pinned left; role, status and the day grid scroll beside them. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --fg: #18202b;
+  --muted: #5d6878;
+  --line: #e1e5ec;
+  --weekend: #eef1f6;
+  --accent: #2f55d4;
+  --accent-fg: #ffffff;
+  --todo: #a9b2c1;
+  --doing: #2f55d4;
+  --done: #1e8a62;
+  --today: #d9482b; --stud: #2f55d4; --cons: #b85c00; --both: #7a3fc4;
+  --danger: #b9321b;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --c1: 270px; --c2: 200px; --c3: 116px; --dw: 24px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #191f29; --fg: #e7ebf2; --muted: #98a3b5; --line: #2a3240;
+    --weekend: #1f2632; --accent: #7f9cff; --accent-fg: #0d1322; --todo: #566175;
+    --doing: #7f9cff; --done: #45c493; --today: #ff7a5c; --stud: #7f9cff; --cons: #f0a04b; --both: #bb96ff; --danger: #ff8f78; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #191f29; --fg: #e7ebf2; --muted: #98a3b5; --line: #2a3240;
+  --weekend: #1f2632; --accent: #7f9cff; --accent-fg: #0d1322; --todo: #566175;
+  --doing: #7f9cff; --done: #45c493; --today: #ff7a5c; --stud: #7f9cff; --cons: #f0a04b; --both: #bb96ff; --danger: #ff8f78; color-scheme: dark;
+}
+@media (max-width: 640px) { :root { --c1: 150px; --c2: 160px; } }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.45; padding-inline: 20px; padding-block: 28px 48px; }
+.wrap { max-width: 1500px; margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; justify-content: space-between; }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-size: clamp(26px, 4vw, 36px); line-height: 1.1; margin: 4px 0 6px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; font-variant-numeric: tabular-nums; }
+.tools { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12.5px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 8px; border-radius: 3px; display: inline-block; }
+.stud { --c: var(--stud); } .cons { --c: var(--cons); } .both { --c: var(--both); } .none { --c: var(--todo); }
+.sw { background: var(--c); }
+.sw.now { width: 2px; height: 14px; background: var(--today); border-radius: 0; }
+
+
+button { font: inherit; color: inherit; cursor: pointer; }
+.btn { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; }
+.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+.chart { position: relative; width: max-content; min-width: 100%; }
+.row { display: grid; grid-template-columns: var(--c1) var(--c2) var(--tw, 600px); position: relative; z-index: 1; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.cell { padding: 8px 12px; min-width: 0; display: flex; align-items: center; }
+.cell.name { position: sticky; left: 0; z-index: 3; background: var(--surface); border-right: 1px solid var(--line); }
+.cell.rolec, .cell.statc { background: var(--surface); border-right: 1px solid var(--line); }
+.head .cell { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; align-items: flex-end; }
+.thead { display: flex; flex-direction: column; }
+.months, .days { display: flex; }
+.months div { font-family: var(--display); font-weight: 600; font-size: 13px; padding: 8px 8px 4px; border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+.days div { width: var(--dw); text-align: center; font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 0 6px; }
+.days div.mon { color: var(--fg); font-weight: 500; }
+
+.overlay { position: absolute; top: 0; bottom: 0; left: calc(var(--c1) + var(--c2)); z-index: 0; pointer-events: none; }
+.overlay .we { position: absolute; top: 0; bottom: 0; width: var(--dw); background: var(--weekend); }
+.overlay .today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today); z-index: 2; }
+.overlay .today b { position: absolute; top: 2px; left: 5px; font: 500 10px var(--mono); color: var(--today); white-space: nowrap; }
+
+.tname { background: none; border: 0; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+.tname strong { font-weight: 500; overflow-wrap: anywhere; }
+.row.parent .tname strong { font-weight: 600; }
+.row.root .tname strong { font-family: var(--display); font-size: 15px; }
+.tname small { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tname:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.role { width: 100%; font: inherit; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 5px 7px; }
+.role:hover { border-color: var(--line); }
+.role:focus { border-color: var(--accent); background: var(--bg); outline: none; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--todo); }
+.pill.doing { color: var(--fg); } .pill.doing i { background: var(--doing); }
+.pill.done { color: var(--fg); } .pill.done i { background: var(--done); }
+
+.tl { position: relative; min-height: 44px; background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--dw)); }
+.bar { position: absolute; top: 50%; transform: translateY(-50%); height: 18px; border: 0; padding: 0; border-radius: 4px; background: var(--c, var(--todo)); }
+.bar.doing { background: var(--doing); } .bar.done { background: var(--done); }
+.row.parent .bar { height: 8px; border-radius: 2px; }
+.bar:hover { filter: brightness(1.1); }
+.blabel { position: absolute; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); white-space: nowrap; padding-left: 8px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { background: var(--surface); border: 0; padding: 7px 12px; color: var(--muted); font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.chart.calmode { width: auto; min-width: 760px; }
+.wdays, .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.wdays div { padding: 8px 10px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.wdays, .week { border-bottom: 1px solid var(--line); }
+.week:last-child { border-bottom: 0; }
+.week { grid-auto-flow: row dense; row-gap: 3px; padding-bottom: 10px; min-height: 96px; align-content: start;
+  background-image: linear-gradient(to right, var(--line) 1px, transparent 1px); background-size: calc(100% / 7) 100%; }
+.dnum { padding: 6px 10px 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dnum.first { color: var(--fg); font-weight: 500; }
+.dnum.now span { background: var(--today); color: var(--surface); border-radius: 10px; padding: 1px 7px; }
+.chip { background: var(--c, var(--todo)); color: var(--accent-fg); border: 0; border-radius: 4px; margin-inline: 4px; padding: 3px 8px; text-align: left; font-size: 12px; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+.chip.none { color: var(--fg); }
+.chip.sub { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 2px var(--c, var(--todo)); }
+.chip.cl { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+.chip.cr { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
+.chip em { font-style: normal; opacity: .8; }
+.chip:hover { filter: brightness(1.1); }
+.empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+#msg { min-height: 20px; color: var(--danger); font-size: 13px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+dialog { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 22px; width: min(480px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(10, 14, 22, .55); }
+dialog h2 { font-family: var(--display); font-size: 20px; margin: 0 0 14px; }
+form { display: flex; flex-direction: column; gap: 12px; }
+.f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.f label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.f input, .f select, .f textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px; width: 100%; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .two { grid-template-columns: 1fr; } }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: 6px; }
+.acts div { display: flex; gap: 8px; }
+#ferr { color: var(--danger); font-size: 13px; min-height: 18px; }
+@media (prefers-reduced-motion: no-preference) { .bar { transition: filter .12s; } }
+</style>
+</head>
+<body style="margin:0">
+<script>window.SEED_VERSION=1;window.SEED={"t02": {"name": "Research Paper Bullet Points", "start": "2026-10-04", "end": "2026-10-08", "role": "Consultant", "parent": "", "order": 2, "notes": ""}, "t03": {"name": "Chapter 1 (Introduction)", "start": "2026-10-08", "end": "2026-10-15", "role": "", "parent": "", "order": 3, "notes": ""}, "t04": {"name": "Chapter 1 - 1st draft", "start": "2026-10-08", "end": "2026-10-11", "role": "Student", "parent": "t03", "order": 4, "notes": ""}, "t05": {"name": "Chapter 1 - Reviewed by consultant and revisions made by students", "start": "2026-10-11", "end": "2026-10-15", "role": "Student and Consultant", "parent": "t03", "order": 5, "notes": ""}, "t06": {"name": "SnapStock Prototype", "start": "2026-10-08", "end": "2026-10-12", "role": "Consultant", "parent": "", "order": 6, "notes": ""}, "t07": {"name": "SnapStock Additional Features Suggestions", "start": "2026-10-13", "end": "2026-10-15", "role": "Students", "parent": "", "order": 7, "notes": ""}, "t08": {"name": "System Architecture Discussion Meeting", "start": "2026-10-16", "end": "2026-10-16", "role": "", "parent": "", "order": 8, "notes": ""}, "t09": {"name": "SnapStock Revised (with added features)", "start": "2026-10-16", "end": "2026-10-19", "role": "Consultant", "parent": "", "order": 9, "notes": "With another meeting for the final system architecture"}, "t10": {"name": "Chapter 2 (Material and Methods)", "start": "2026-10-16", "end": "2026-10-31", "role": "", "parent": "", "order": 10, "notes": ""}, "t11": {"name": "SnapStock final review for bugs only, no additional features", "start": "2026-10-20", "end": "2026-10-20", "role": "Student", "parent": "", "order": 11, "notes": ""}, "t12": {"name": "SnapStock Final Version", "start": "2026-10-21", "end": "2026-10-26", "role": "Consultant", "parent": "", "order": 12, "notes": ""}, "t13": {"name": "User Testing (Mira's Bakery Only)", "start": "2026-10-27", "end": "2026-11-03", "role": "Student", "parent": "", "order": 13, "notes": ""}, "t14": {"name": "Data Analysis and Chapter 3 (Results and Discussion) [Draft]", "start": "2026-11-04", "end": "2026-11-06", "role": "Student", "parent": "", "order": 14, "notes": ""}, "t15": {"name": "Chapter 4 and 5 [Draft]", "start": "2026-11-08", "end": "2026-11-14", "role": "Student", "parent": "", "order": 15, "notes": ""}, "t16": {"name": "Full Paper Review and revision", "start": "2026-11-15", "end": "2026-11-17", "role": "Student and Consultant", "parent": "", "order": 16, "notes": ""}, "t17": {"name": "Mock Presentation", "start": "2026-11-21", "end": "2026-11-21", "role": "Student", "parent": "", "order": 17, "notes": ""}, "fp0kwwpga2kag95ajg81": {"name": "Chapter 2 - 1st Draft", "start": "2026-10-16", "end": "2026-10-24", "role": "Student", "parent": "t10", "order": 18, "notes": ""}, "mt2iccmfdhd7x3frnbi8": {"name": "Chapter 2 - Reviewed by consultant and revisions made by students", "start": "2026-10-25", "end": "2026-10-31", "role": "Student and Consultant", "parent": "t10", "order": 19, "notes": ""}, "z3gpn9g5pofzsmtyrule": {"name": "Poster Making", "start": "2026-11-15", "end": "2026-11-21", "role": "Student", "parent": "", "order": 20, "notes": ""}, "1l5fffdtoey9fzfnwwmx": {"name": "Defense Week", "start": "2026-11-23", "end": "2026-11-27", "role": "Student", "parent": "", "order": 21, "notes": ""}};</script>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Capstone schedule</div>
+      <h1>SnapStock Gantt Chart</h1>
+      <p class="sub" id="sub">Loading the schedule…</p>
+    </div>
+    <div class="tools">
+      <div class="legend" aria-label="Legend">
+        <span><i class="sw stud"></i>Student</span>
+        <span><i class="sw cons"></i>Consultant</span>
+        <span><i class="sw both"></i>Student and Consultant</span>
+        <span><i class="sw none"></i>Unassigned</span>
+        <span><i class="sw now"></i>Today</span>
+      </div>
+      <div class="seg" role="group" aria-label="View">
+        <button id="v-gantt" aria-pressed="true">Timeline</button><button id="v-cal" aria-pressed="false">Calendar</button>
+      </div>
+      <button class="btn" id="add" hidden>Add task</button>
+    </div>
+  </header>
+
+  <p class="hint" id="hint">Pick Student, Consultant or both in the Assigned to column. Click a task name or its bar to change dates or notes.</p>
+  <div id="msg" role="status"></div>
+
+  <div class="sheet"><div class="chart" id="chart"><div class="empty">Loading the schedule…</div></div></div>
+</div>
+
+<dialog id="dlg">
+  <form id="form">
+    <h2 id="dtitle">Edit task</h2>
+    <div class="f"><label for="f-name">Task</label><input id="f-name" required maxlength="160"></div>
+    <div class="f"><label for="f-role">Assigned to</label><select id="f-role"></select></div>
+    <div class="two">
+      <div class="f"><label for="f-start">Start</label><input id="f-start" type="date" required></div>
+      <div class="f"><label for="f-end">End</label><input id="f-end" type="date" required></div>
+    </div>
+    <div class="f"><label for="f-parent">Under</label><select id="f-parent"></select></div>
+    <div class="f"><label for="f-notes">Notes</label><textarea id="f-notes" rows="3" maxlength="600"></textarea></div>
+    <div id="ferr" role="alert"></div>
+    <div class="acts">
+      <button type="button" class="btn danger" id="del">Delete task</button>
+      <div><button type="button" class="btn ghost" id="cancel">Cancel</button><button class="btn" id="save">Save</button></div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  const DAY = 864e5, W = 24;
+  const $ = id => document.getElementById(id);
+  const chart = $('chart'), dlg = $('dlg');
+  let db = null, tasks = [], state = 'loading', editing = null, delArmed = false;
+  const queue = {};
+  const WHO = ['Student', 'Consultant', 'Student and Consultant'];
+  function who(role) {
+    const st = /student/i.test(role || ''), co = /consultant/i.test(role || '');
+    return st && co ? 'both' : co ? 'cons' : st ? 'stud' : 'none';
+  }
+  const canon = role => ({ stud: WHO[0], cons: WHO[1], both: WHO[2], none: '' })[who(role)];
+  function fillWho(sel, role) {
+    sel.textContent = '';
+    sel.append(h('option', { value: '' }, 'Unassigned'), ...WHO.map(w => h('option', { value: w }, w)));
+    sel.value = canon(role);
+  }
+  let view = 'gantt';
+  try { if (localStorage.getItem('snapstock-view') === 'cal') view = 'cal'; } catch (_) {}
+  const HINTS = { gantt: 'Pick Student, Consultant or both in the Assigned to column. The bar colour follows the choice. Click a task name or its bar to change dates or notes.',
+    cal: 'Colours show who each task is assigned to. Click a task to change its dates, assignee or notes. Outlined tasks are sub-items.' };
+  function setView(v) {
+    view = v; try { localStorage.setItem('snapstock-view', v); } catch (_) {}
+    render();
+  }
+  function renderCal(rows) {
+    const list = rows.filter(r => !(r.depth === 0 && r.parent));
+    const use = list.length ? list : rows;
+    const min = Math.min(...use.map(r => pd(r.t.start))), max = Math.max(...use.map(r => pd(r.t.end)));
+    const now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    chart.append(h('div', { className: 'wdays' }, ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => h('div', {}, d))));
+    let first = true;
+    for (let ws = min - new Date(min).getUTCDay() * DAY; ws <= max; ws += 7 * DAY) {
+      const we = ws + 6 * DAY, wk = h('div', { className: 'week' });
+      for (let i = 0; i < 7; i++) {
+        const t = ws + i * DAY, d = new Date(t).getUTCDate(), lead = first || d === 1; first = false;
+        wk.append(h('div', { className: 'dnum' + (lead ? ' first' : '') + (t === today ? ' now' : ''), style: `grid-column:${i + 1};grid-row:1` },
+          h('span', {}, lead ? short(t) : String(d))));
+      }
+      for (const { t, depth, label } of use) {
+        const s = pd(t.start), e = pd(t.end);
+        if (e < ws || s > we) continue;
+        const a = Math.max(s, ws), b = Math.min(e, we);
+        const range = s === e ? short(s) : `${short(s)} – ${short(e)}`;
+        wk.append(h('button', { className: 'chip ' + who(t.role) + (depth > 1 ? ' sub' : '') + (s < ws ? ' cl' : '') + (e > we ? ' cr' : ''),
+          style: `grid-column:${(a - ws) / DAY + 1} / span ${(b - a) / DAY + 1}`, title: `${label}: ${range}`, onclick: () => openEdit(t) },
+          label, canon(t.role) ? h('em', {}, ' · ' + canon(t.role)) : null));
+      }
+      chart.append(wk);
+    }
+  }
+
+  const pd = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  const fmt = (t, o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: 'UTC' }, o)).format(t);
+  const short = t => fmt(t, { month: 'short', day: 'numeric' });
+  const cls = s => s === 'Done' ? 'done' : s === 'In progress' ? 'doing' : 'todo';
+  function h(tag, props, ...kids) {
+    const e = document.createElement(tag);
+    for (const k in props || {}) {
+      if (k === 'style') e.style.cssText = props[k];
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), props[k]);
+      else if (k in e) e[k] = props[k]; else e.setAttribute(k, props[k]);
+    }
+    for (const c of kids) if (c != null) e.append(c);
+    return e;
+  }
+  function say(t) { $('msg').textContent = t || ''; }
+
+  // A sub-item under a task (not directly under the project) carries that task's short name, e.g. "Chapter 1: 1st draft".
+  function full(t, depth) {
+    const name = t.name || 'Untitled task', p = depth > 1 && tasks.find(x => x.id === t.parent);
+    return p && p.name ? p.name.replace(/\s*\(.*\)\s*$/, '') + ': ' + name : name;
+  }
+  function ordered() {
+    const ids = new Set(tasks.map(t => t.id)), kids = {};
+    for (const t of tasks) { const p = ids.has(t.parent) ? t.parent : ''; (kids[p] = kids[p] || []).push(t); }
+    const out = [], seen = new Set();
+    (function walk(p, depth) {
+      for (const t of (kids[p] || []).sort((a, b) => (a.order || 0) - (b.order || 0))) {
+        if (seen.has(t.id)) continue; seen.add(t.id);
+        out.push({ t, depth, parent: !!kids[t.id], label: full(t, depth) }); walk(t.id, depth + 1);
+      }
+    })('', 0);
+    for (const t of tasks) if (!seen.has(t.id)) out.push({ t, depth: 0, parent: false, label: t.name || 'Untitled task' });
+    return out;
+  }
+  function descendants(id) {
+    const set = new Set([id]); let grew = true;
+    while (grew) { grew = false; for (const t of tasks) if (set.has(t.parent) && !set.has(t.id)) { set.add(t.id); grew = true; } }
+    return set;
+  }
+
+  function render() {
+    const act = document.activeElement, keep = act && chart.contains(act) && act.id ? { id: act.id, v: act.value, s: act.selectionStart } : null;
+    chart.textContent = '';
+    chart.classList.toggle('calmode', view === 'cal' && state === 'ready');
+    $('v-gantt').setAttribute('aria-pressed', String(view === 'gantt'));
+    $('v-cal').setAttribute('aria-pressed', String(view === 'cal'));
+    $('hint').textContent = HINTS[view] + (window.SEED ? ' Changes made here are saved only in this browser.' : '');
+    if (state !== 'ready') {
+      const text = state === 'loading' ? 'Loading the schedule…'
+        : state === 'off' ? 'The schedule cannot load in this view. Open this page while signed in to Claude.'
+        : 'No tasks yet. Use Add task to put the first bar on the chart.';
+      chart.append(h('div', { className: 'empty' }, text));
+      $('sub').textContent = state === 'empty' ? 'No tasks yet' : text;
+      return;
+    }
+    const rows = ordered();
+    const min = Math.min(...tasks.map(t => pd(t.start)));
+    const max = Math.max(...tasks.map(t => pd(t.end))) + 7 * DAY;
+    const n = Math.round((max - min) / DAY) + 1;
+    chart.style.setProperty('--tw', n * W + 'px');
+
+    $('sub').textContent = `${short(min)} to ${fmt(max - 7 * DAY, { month: 'short', day: 'numeric', year: 'numeric' })} · ${tasks.length} tasks`;
+    if (view === 'cal') { renderCal(rows); return; }
+
+    const months = h('div', { className: 'months' }), days = h('div', { className: 'days' });
+    const overlay = h('div', { className: 'overlay', style: `width:${n * W}px` });
+    let run = 0, label = '';
+    for (let i = 0; i < n; i++) {
+      const t = min + i * DAY, d = new Date(t), dow = d.getUTCDay(), m = fmt(t, { month: 'long', year: 'numeric' });
+      if (m !== label) { if (run) months.append(h('div', { style: `width:${run * W}px` }, label)); label = m; run = 0; }
+      run++;
+      days.append(h('div', { className: dow === 1 ? 'mon' : '' }, String(d.getUTCDate())));
+      if (dow === 0 || dow === 6) overlay.append(h('div', { className: 'we', style: `left:${i * W}px` }));
+    }
+    months.append(h('div', { style: `width:${run * W}px` }, label));
+    const now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    if (today >= min && today <= max) overlay.append(h('div', { className: 'today', style: `left:${(today - min) / DAY * W + W / 2}px` }, h('b', {}, 'Today')));
+
+    chart.append(overlay, h('div', { className: 'row head' },
+      h('div', { className: 'cell name' }, 'Task'),
+      h('div', { className: 'cell rolec' }, 'Assigned to'),
+      h('div', { className: 'thead' }, months, days)));
+
+    for (const { t, depth, parent, label } of rows) {
+      const s = pd(t.start), e = pd(t.end), len = Math.round((e - s) / DAY) + 1;
+      const left = (s - min) / DAY * W + 2, width = len * W - 4;
+      const range = s === e ? short(s) : `${short(s)} – ${short(e)}`;
+      const open = () => openEdit(t);
+      chart.append(h('div', { className: 'row' + (parent ? ' parent' : '') + (depth === 0 && parent ? ' root' : '') },
+        h('div', { className: 'cell name', style: `padding-left:${12 + depth * 16}px` },
+          h('button', { className: 'tname', title: t.notes || 'Edit task', onclick: open },
+            h('strong', {}, label), h('small', {}, `${range} · ${len}d`))),
+        h('div', { className: 'cell rolec' },
+          roleSel(t)),
+        h('div', { className: 'tl' },
+          h('button', { className: 'bar ' + who(t.role), style: `left:${left}px;width:${width}px`, title: `${label}: ${range}`, 'aria-label': `Edit ${label}, ${range}`, onclick: open }),
+          h('span', { className: 'blabel', style: `left:${left + width}px` }, canon(t.role)))));
+    }
+    if (keep) { const el = $(keep.id); if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.s); } catch (_) {} } }
+  }
+
+  function roleSel(t) {
+    const sel = h('select', { className: 'role', id: 'role-' + t.id, 'aria-label': 'Assigned to for ' + t.name,
+      onchange: ev => write(t.id, { role: ev.target.value }) });
+    fillWho(sel, t.role);
+    return sel;
+  }
+
+  function write(id, patch) {
+    say('');
+    queue[id] = (queue[id] || Promise.resolve()).then(() => db.doc('tasks/' + id).update(patch))
+      .catch(err => say(err && err.code === 'invalid_argument' ? 'You have view-only access, so this change was not saved.' : 'That change could not be saved. Try again.'));
+    return queue[id];
+  }
+
+  function openEdit(t) {
+    editing = t; delArmed = false;
+    $('dtitle').textContent = t ? 'Edit task' : 'Add task';
+    $('del').hidden = !t; $('del').textContent = 'Delete task'; $('ferr').textContent = '';
+    const block = t ? descendants(t.id) : new Set(), sel = $('f-parent');
+    sel.textContent = ''; sel.append(h('option', { value: '' }, 'Top level'));
+    for (const r of ordered()) if (!block.has(r.t.id)) sel.append(h('option', { value: r.t.id }, '  '.repeat(r.depth) + r.t.name));
+    const last = tasks.length ? tasks.reduce((a, b) => pd(a.end) > pd(b.end) ? a : b).end : new Date().toISOString().slice(0, 10);
+    $('f-name').value = t ? t.name : ''; fillWho($('f-role'), t ? t.role : '');
+    $('f-start').value = t ? t.start : last; $('f-end').value = t ? t.end : last;
+    sel.value = t ? t.parent || '' : (tasks.find(x => !x.parent) || { id: '' }).id;
+    $('f-notes').value = t ? t.notes || '' : '';
+    dlg.showModal();
+  }
+  $('cancel').onclick = () => dlg.close();
+  $('add').onclick = () => openEdit(null);
+  $('v-gantt').onclick = () => setView('gantt');
+  $('v-cal').onclick = () => setView('cal');
+  $('del').onclick = async () => {
+    if (!delArmed) { delArmed = true; $('del').textContent = 'Click again to delete'; return; }
+    const t = editing, kids = tasks.filter(x => x.parent === t.id);
+    dlg.close();
+    try {
+      for (const k of kids) await write(k.id, { parent: t.parent || '' });
+      await db.doc('tasks/' + t.id).delete();
+    } catch (_) { say('That task could not be deleted. Try again.'); }
+  };
+  $('form').onsubmit = async ev => {
+    ev.preventDefault();
+    const d = { name: $('f-name').value.trim(), role: $('f-role').value, start: $('f-start').value, end: $('f-end').value,
+      parent: $('f-parent').value, notes: $('f-notes').value.trim() };
+    if (!d.name) { $('ferr').textContent = 'Give the task a name.'; return; }
+    if (!d.start || !d.end || d.end < d.start) { $('ferr').textContent = 'The end date must be on or after the start date.'; return; }
+    dlg.close();
+    if (editing) return write(editing.id, d);
+    d.order = Math.max(0, ...tasks.map(t => t.order || 0)) + 1;
+    try { await db.collection('tasks').doc().set(d); }
+    catch (_) { say('The new task could not be saved. Try again.'); }
+  };
+
+  // Standalone copy (no Claude viewer): tasks start from the embedded seed and edits stay in this browser.
+  function localDb(seed) {
+    const KEY = 'snapstock-tasks-' + (window.SEED_VERSION || 1);
+    let data = null, cb = null;
+    try { data = JSON.parse(localStorage.getItem(KEY)); } catch (_) {}
+    if (!data || typeof data !== 'object') data = JSON.parse(JSON.stringify(seed));
+    const emit = save => {
+      if (save) try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (_) {}
+      if (cb) cb({ docs: Object.keys(data).map(id => ({ id, data: () => data[id] })) });
+    };
+    const doc = id => ({
+      update: async patch => { if (!data[id]) throw { code: 'unavailable' }; data[id] = Object.assign({}, data[id], patch); emit(true); },
+      set: async d => { data[id] = d; emit(true); },
+      delete: async () => { delete data[id]; emit(true); }
+    });
+    return { doc: path => doc(path.split('/')[1]),
+      collection: () => ({ doc: id => doc(id || 'n' + Date.now().toString(36)), onSnapshot: fn => { cb = fn; emit(false); } }) };
+  }
+  const ok = /^\d{4}-\d{2}-\d{2}$/;
+  function start() {
+    const use = window.claude && window.claude.use ? window.claude.use('db') : Promise.resolve(window.SEED ? localDb(window.SEED) : null);
+    use.then(ns => {
+      db = ns;
+      if (!db) { state = 'off'; render(); return; }
+      $('add').hidden = false;
+      db.collection('tasks').onSnapshot(snap => {
+        tasks = snap.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(t => ok.test(t.start || '') && ok.test(t.end || '') && t.end >= t.start);
+        state = tasks.length ? 'ready' : 'empty';
+        render();
+      }, () => { state = 'off'; $('add').hidden = true; render(); });
+    }, () => { state = 'off'; render(); });
+  }
+  start();
+})();
+</script>
+</body>
+</html>
